@@ -1,61 +1,82 @@
 const StreamZip = require('node-stream-zip');
 
+/**
+ * Extracts raw XML data from a DOCX file
+ * @param {string} filePath The location of the .docx file
+ * @returns {Promise<string>}
+ */
+const open = (filePath) => new Promise((resolve, reject) => {
+
+    // Instantiate zip stream
+    const zip = new StreamZip({
+        file: filePath,
+        storeEntries: true
+    })
+
+    zip.on('ready', () => {
+
+        // Uint8Array[]
+        let chunks;
+
+        // Buffer
+        let content;
+
+        // Open enclosed XML file
+        zip.stream('word/document.xml', (err, stream) => {
+
+            if (err) return reject(err);
+            if (!stream) return reject('No stream.');
+
+            // Append data chunks
+            stream.on('data', chunk => chunks.push(chunk));
+
+            // Handle stream close
+            stream.on('end', () => {
+                content = Buffer.concat(chunks);
+                zip.close();
+                resolve(content.toString());
+            });
+
+        })
+    })
+
+})
+
+/**
+ * Extracts text from an DOCX file
+ * @param {string} filePath The location of the .docx file
+ * @returns {Promise<string>}
+ */
+const extract = (filePath) => new Promise((resolve, reject) => {
+
+    open(filePath)
+
+        .then((result) => {
+
+            // Body text
+            let body = '';
+
+            // Funky regex magic
+            let components = result.split('<w:t');
+            for (let i = 0; i < components.length; i++) {
+
+                let tags = components[i].split('>');
+                let content = tags[1].replace(/<.*$/, "");
+
+                body += content + ' ';
+
+            }
+
+            resolve(body)
+
+        })
+        
+        .catch(reject)
+
+});
+
 module.exports = {
 
-    open: function(filePath) {
-        return new Promise(
-            function(resolve, reject) {
-                const zip = new StreamZip({
-                    file: filePath,
-                    storeEntries: true
-                })
-
-                zip.on('ready', () => {
-                    var chunks = []
-                    var content = ''
-                    zip.stream('word/document.xml', (err, stream) => {
-                        if (err) {
-                            reject(err)
-                        }
-                        stream.on('data', function(chunk) {
-                            chunks.push(chunk)
-                        })
-                        stream.on('end', function() {
-                            content = Buffer.concat(chunks)
-                            zip.close()
-                            resolve(content.toString())
-                        })
-                    })
-                })
-            }
-        )
-    },
-
-    extract: function(filePath) {
-        return new Promise(
-            function(resolve, reject) {
-                module.exports.open(filePath).then(function (res, err) {
-                    if (err) { 
-                        reject(err) 
-                    }
-
-                    var body = ''
-                    var components = res.toString().split('<w:t')
-
-                    for(var i=0;i<components.length;i++) {
-                        var tags = components[i].split('>')
-                        var content = tags[1].replace(/<.*$/,"")
-                        body += content+' '
-                    }
-
-                    resolve(body)
-                })
-            }
-        )
-    }
+    extract, open
 
 }
-
-return module.exports
-
-
